@@ -7,10 +7,14 @@ export default defineNuxtConfig({
     'nuxt-icon',
     'nuxt-headlessui',
     'nuxt-vitest',
-    '@nuxt/devtools'
+    '@nuxt/devtools',
+    '@nuxt/image',
+    '@nuxt/icon'
   ],
-  experimental: {
-    reactivityTransform: true
+  runtimeConfig: {
+    public: {
+      backendRootUrl: process.env.BACKEND_ROOT_URL || 'http://localhost:8000'
+    }
   },
   css: ['~/assets/css/tailwind.css'],
   postcss: {
@@ -25,5 +29,4 @@ export default defineNuxtConfig({
   headlessui: {
     prefix: ''
   },
-  devtools: true
 })

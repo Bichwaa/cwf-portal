@@ -2,8 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  body {
+    @apply text-left;
+  }
+  ul {
+    @apply list-disc;
+  }
+}
+
 html.dark {
-    @apply bg-[#11233B] text-gray-100
 }
 
 @keyframes reverse-spin {

@@ -1,9 +1,17 @@
 <script setup lang="ts">
-// Loading screen component - no data fetching needed
+const props = withDefaults(defineProps<{
+  backgroundColor?: string;
+  text?: string;
+}>(), {
+  backgroundColor: '#11233B',
+  text: 'Getting Ready'
+});
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#11233B] flex flex-col items-center justify-center">
+  <div 
+    class="min-h-screen flex flex-col items-center justify-center"
+    :style="{ backgroundColor: props.backgroundColor }">
     <!-- Spinning Loading Icon -->
     <div class="mb-6 relative">
       <div class="w-12 h-12 border-4 border-[#11233B] border-t-[#004AAD] rounded-full animate-spin"></div>
@@ -13,8 +21,10 @@
     </div>
     
     <!-- Getting Ready Text -->
-    <div class="text-white text-xl font-sans">
-      Getting Ready
+    <div 
+      class="text-xl font-sans"
+      :class="backgroundColor=='#11233B'? 'text-white': 'text-black'">
+      {{ text }}
     </div>
   </div>
 </template>
