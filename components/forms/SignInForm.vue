@@ -94,7 +94,7 @@
         <div class="text-right">
           <p class="text-sm text-gray-600">
             Don't have an account? 
-            <a href="/auth/sign-up" class="text-blue-600 hover:text-blue-700 font-medium">Sign Up</a>
+            <a href="/profile/create" class="text-blue-600 hover:text-blue-700 font-medium">Sign Up</a>
           </p>
         </div>
       </form>

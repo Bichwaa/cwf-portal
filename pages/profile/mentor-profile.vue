@@ -18,7 +18,7 @@
                 </svg>
               </div>
               <div>
-                <h2 class="text-2xl text-left font-semibold text-gray-800">Hello {{ user?.firstName || 'User' }},</h2>
+                <h2 class="text-2xl text-left font-semibold text-gray-800">Hello {{ displayName }},</h2>
                 <div class="flex items-center space-x-2 text-gray-500 mt-1">
                   <Icon name="material-symbols:location-on-outline-rounded" class="w-6 h-6 text-gray-400" />
                   <span>{{ user?.country || '—' }}</span>
@@ -46,7 +46,7 @@
           <h3 class="text-lg text-left font-semibold text-gray-800 mb-4">Personal Info</h3>
           <hr class="my-4"/>
           <div class="py-4">
-            <h3 class="text-left text-lg py-2 text-gray-700 font-medium">About {{ user?.firstName || 'User' }}</h3>
+            <h3 class="text-left text-lg py-2 text-gray-700 font-medium">About {{ displayName }}</h3>
             <pre class="text-left text-sm text-gray-700">{{ user?.bio || 'No bio available' }}</pre>
           </div>
           <hr class="my-4"/>
@@ -69,7 +69,8 @@
                 <span class="text-gray-700 text-start">{{ user?.phoneNumber || '—' }}</span>
               </div>
             </div>
-            <div class="flex items-center space-x-3">
+            <!-- Gender (only for individuals) -->
+            <div v-if="!user?.isOrganization" class="flex items-center space-x-3">
               <div class="p-2 rounded-full bg-gray-200">
                 <Icon name="ion:male-female-outline" class="w-6 h-6 text-gray-600" />
               </div>
@@ -78,13 +79,24 @@
                 <span class="text-gray-700 text-start capitalize">{{ user?.gender || '—' }}</span>
               </div>
             </div>
-            <div class="flex items-center space-x-3">
+            <!-- Date of Birth (only for individuals) -->
+            <div v-if="!user?.isOrganization" class="flex items-center space-x-3">
               <div class="p-2 rounded-full bg-gray-200">
                 <Icon name="material-symbols-light:calendar-month-outline-rounded" class="w-6 h-6 text-gray-600" />
               </div>
               <div class="flex flex-col gap-1">
                 <span class="text-sm text-gray-400 text-start">Date of Birth</span>
                 <span class="text-gray-700 text-start">{{ formattedDob }}</span>
+              </div>
+            </div>
+            <!-- Organization Name (only for organizations) -->
+            <div v-if="user?.isOrganization" class="flex items-center space-x-3">
+              <div class="p-2 rounded-full bg-gray-200">
+                <Icon name="mdi:office-building-outline" class="w-6 h-6 text-gray-600" />
+              </div>
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-400 text-start">Organization Name</span>
+                <span class="text-gray-700 text-start">{{ user?.organizationName || '—' }}</span>
               </div>
             </div>
             <hr class="my-4 col-span-2"/>
@@ -134,13 +146,17 @@
         <div class="bg-white rounded-lg shadow-sm p-6">
           <h3 class="text-lg text-start font-semibold text-gray-800 mb-4">Mentorship Requests</h3>
           <hr class="my-4"/>
-          <div class="space-y-4">
+          <div v-if="mentorshipRequests && mentorshipRequests.length > 0" class="space-y-4">
             <div v-for="request in mentorshipRequests" :key="request._id" class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
               <div class="flex items-center space-x-4">
                 <img :src="request.avatar || '/prof-ill.svg'" alt="Avatar" class="w-10 h-10 rounded-full">
                 <div>
-                  <p class="font-semibold text-gray-800">{{ request.firstName +' '+request.lastName }}</p>
-                  <p class="text-sm text-gray-500">{{ request.country }}</p>
+                  <p class="font-semibold text-gray-800">
+                    {{ request.isOrganization 
+                      ? (request.organizationName || 'Organization') 
+                      : ((request.firstName || '') + ' ' + (request.lastName || '')).trim() || 'User' }}
+                  </p>
+                  <p class="text-sm text-gray-500">{{ request.country || '—' }}</p>
                 </div>
               </div>
               <button @click="previewMentee(request._id)" class="flex items-center space-x-2 px-3 py-1 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
@@ -148,6 +164,9 @@
                 <span>View</span>
               </button>
             </div>
+          </div>
+          <div v-else class="text-center py-4 text-gray-500 text-sm">
+            No mentorship requests yet
           </div>
         </div>
 
@@ -198,6 +217,16 @@ const user = ref<UserMe | null>(null)
 const isLoading = ref(true)
 const error = ref('')
 
+// Computed property to get display name (organization name for orgs, firstName + lastName for individuals)
+const displayName = computed(() => {
+  if (!user.value) return 'User'
+  if (user.value.isOrganization) {
+    return user.value.organizationName || 'Organization'
+  }
+  const fullName = `${user.value.firstName || ''} ${user.value.lastName || ''}`.trim()
+  return fullName || 'User'
+})
+
 const formattedDob = computed(() => {
   const dob = user.value?.dateOfBirth
   if (!dob) return '—'
@@ -213,18 +242,20 @@ const formattedDob = computed(() => {
 const mentorshipRequests = ref<UserMe[]>()
 
 const getMentorshipRequests = async (mentorId: string) => {
-  const token = localStorage.getItem('auth_token')
-  if (!token) {
-    isLoading.value = false
-    error.value = 'Not authenticated'
-    return
-  }
-  const { get } = useApi()
-  const response = await get<any>(`/mentorship/mentorships/mentor/${mentorId}/requests`, {
-    headers: { authorization: `Bearer ${token}` }
-  })
-  if(response.data.requests.length > 0) {
-    mentorshipRequests.value = response.data.requests
+  try {
+    const token = localStorage.getItem('auth_token')
+    if (!token) {
+      return
+    }
+    const { get } = useApi()
+    const response = await get<any>(`/mentorship/mentorships/mentor/${mentorId}/requests`, {
+      headers: { authorization: `Bearer ${token}` }
+    })
+    if(response.data?.requests?.length > 0) {
+      mentorshipRequests.value = response.data.requests
+    }
+  } catch (e) {
+    // Ignore all errors
   }
 }
 
@@ -245,13 +276,8 @@ onMounted(async () => {
     const me = await get<UserMe>('/auth/me', {
       headers: { authorization: `Bearer ${token}` }
     })
-    try {
-      await getMentorshipRequests(me.data._id)
-    } catch (requestError: any) {
-      if (requestError?.status !== 404) {
-        throw requestError
-      }
-    }
+    // getMentorshipRequests handles its own errors internally
+    await getMentorshipRequests(me.data._id)
     user.value = me.data
   } catch (e) {
     error.value = 'Failed to load profile'

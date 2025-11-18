@@ -2,16 +2,14 @@
   <div class="bg-white rounded-lg shadow-sm p-4 flex items-center justify-between">
     <div class="flex items-center space-x-4">
       <span class="text-gray-500 font-semibold">{{ 1}}.</span>
-      <img :src="mentor.user.avatar || '/prof-ill.svg'" :alt="mentor.user.firstName + ' ' + mentor.user.lastName" class="w-12 h-12 rounded-full object-cover">
-      <h3 class="font-semibold text-gray-800">{{ formatName(mentor.user.firstName + " " + mentor.user.lastName) }}</h3>
+      <img :src="mentor.user.avatar || '/prof-ill.svg'" :alt="displayName" class="w-12 h-12 rounded-full object-cover">
+      <h3 class="font-semibold text-gray-800">{{ formatName(displayName) }}</h3>
     </div>
       <div class="w-36">
-        <p 
-          class="font-semibold text-gray-800">
-          {{ mentor.specializations && mentor.specializations.length > 0 ? formatName(mentor.specializations[0]) : 'Not provided' }}
+        <p class="font-semibold text-gray-800">
+          {{ mentor.user.isOrganization ? 'Organization' : 'Individual' }}
         </p>
-        <p class="text-sm text-gray-500" v-if="mentor.specializations && mentor.specializations.length > 0">Expertise Area</p>
-        <p class="text-sm text-gray-500" v-else>Not provided</p>
+        <p class="text-sm text-gray-500">Type</p>
       </div>
       <div class="w-36">
         <p  class="font-semibold text-gray-800" 
@@ -45,9 +43,25 @@
 </template>
 
 <script lang="ts" setup>
+import { computed } from 'vue'
 import type { PropType } from 'vue'
 import type { MentorProfile as Mentor } from '../../types'
 
+const props = defineProps({
+  mentor: {
+    type: Object as PropType<Mentor>,
+    required: true,
+  },
+})
+
+// Computed property to get display name (organizationName for orgs, firstName + lastName for individuals)
+const displayName = computed(() => {
+  if (props.mentor.user.isOrganization) {
+    return props.mentor.user.organizationName || 'Organization'
+  }
+  const fullName = `${props.mentor.user.firstName || ''} ${props.mentor.user.lastName || ''}`.trim()
+  return fullName || 'User'
+})
 
 const formatName = (name: string): string => {
   if (!name) return ''
@@ -64,11 +78,4 @@ const formatName = (name: string): string => {
   shortenedWords.push(words[words.length - 1])
   return shortenedWords.join(' ')
 }
-
-defineProps({
-  mentor: {
-    type: Object as PropType<Mentor>,
-    required: true,
-  },
-})
 </script>

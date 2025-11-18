@@ -7,7 +7,7 @@
         <p class="text-gray-600 text-sm">You're about to join 12,000+ incredible members</p>
       </div>
 
-      <form class="space-y-6">
+      <form @submit.prevent="handleSubmit" class="space-y-6">
         <!-- Social Sign Up -->
         <div>
           <p class="text-sm text-gray-600 mb-4 text-center">Sign Up With</p>
@@ -44,7 +44,7 @@
         <div class="space-y-4">
           <!-- Account Type -->
           <div class="relative">
-            <select class="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-700 appearance-none cursor-pointer">
+            <select v-model="accountType" @change="handleAccountTypeChange" class="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-700 appearance-none cursor-pointer">
               <option value="individual">Individual</option>
               <option value="organization">Organization</option>
             </select>
@@ -55,19 +55,48 @@
             </div>
           </div>
 
-          <!-- Name Fields -->
-          <div class="grid grid-cols-2 gap-3">
-            <input type="text" placeholder="First Name" class="w-full p-3 border border-gray-300 rounded-lg placeholder-gray-400">
-            <input type="text" placeholder="Last Name" class="w-full p-3 border border-gray-300 rounded-lg placeholder-gray-400">
+          <!-- Organization Name (shown only for organizations) -->
+          <div v-if="accountType === 'organization'">
+            <input 
+              v-model="user.organizationName" 
+              type="text" 
+              placeholder="Organization Name" 
+              class="w-full p-3 border border-gray-300 rounded-lg placeholder-gray-400"
+              required
+            >
+          </div>
+
+          <!-- Name Fields (shown only for individuals) -->
+          <div v-if="accountType === 'individual'" class="grid grid-cols-2 gap-3">
+            <input 
+              v-model="user.firstName" 
+              type="text" 
+              placeholder="First Name" 
+              class="w-full p-3 border border-gray-300 rounded-lg placeholder-gray-400"
+              required
+            >
+            <input 
+              v-model="user.lastName" 
+              type="text" 
+              placeholder="Last Name" 
+              class="w-full p-3 border border-gray-300 rounded-lg placeholder-gray-400"
+              required
+            >
           </div>
 
           <!-- Email -->
-          <input type="email" placeholder="Email" class="w-full p-3 border border-gray-300 rounded-lg placeholder-gray-400">
+          <input 
+            v-model="user.email" 
+            type="email" 
+            placeholder="Email" 
+            class="w-full p-3 border border-gray-300 rounded-lg placeholder-gray-400"
+            required
+          >
 
           <!-- Phone Number -->
           <div class="flex">
             <div class="relative w-32">
-              <select class="w-full p-3 border border-gray-300 rounded-l-lg bg-white text-gray-700 appearance-none cursor-pointer">
+              <select v-model="phoneCountryCode" class="w-full p-3 border border-gray-300 rounded-l-lg bg-white text-gray-700 appearance-none cursor-pointer">
                 <option value="+234">🇳🇬 +234</option>
                 <option value="+1">🇺🇸 +1</option>
                 <option value="+44">🇬🇧 +44</option>
@@ -78,16 +107,38 @@
                 </svg>
               </div>
             </div>
-            <input type="tel" placeholder="Phone Number" class="flex-1 p-3 border border-gray-300 rounded-r-lg border-l-0 placeholder-gray-400">
+            <input 
+              v-model="phoneNumber" 
+              type="tel" 
+              placeholder="Phone Number" 
+              class="flex-1 p-3 border border-gray-300 rounded-r-lg border-l-0 placeholder-gray-400"
+              required
+            >
           </div>
 
           <!-- Password -->
-          <input type="password" placeholder="Password" class="w-full p-3 border border-gray-300 rounded-lg placeholder-gray-400">
+          <input 
+            v-model="user.password" 
+            type="password" 
+            placeholder="Password" 
+            class="w-full p-3 border border-gray-300 rounded-lg placeholder-gray-400"
+            required
+          >
+        </div>
+
+        <!-- Error Message -->
+        <div v-if="error" class="text-red-600 text-sm text-center">
+          {{ error }}
         </div>
 
         <!-- Sign Up Button -->
         <div class="pt-2">
-          <buttons-hover-gradient-button text="Sign Up" class="w-full"/>
+          <buttons-hover-gradient-button 
+            :text="isSubmitting ? 'Signing Up...' : 'Sign Up'" 
+            :disabled="isSubmitting"
+            class="w-full"
+            @click="handleSubmit"
+          />
         </div>
 
         <!-- Sign In Link -->
@@ -103,7 +154,91 @@
 </template>
 
 <script lang="ts" setup>
-// Component logic can be added here if needed
+import type { User} from '../../types';
+
+const accountType = ref<'individual' | 'organization'>('individual')
+const phoneCountryCode = ref('+234')
+const phoneNumber = ref('')
+const isSubmitting = ref(false)
+const error = ref('')
+
+const user = ref<User>({
+  _id: '',
+  firstName: '',
+  lastName: '',
+  email: '',
+  password: '',
+  isOrganization: false,
+  role: 'mentee',
+  __v: 0,
+  googleId: '',
+  facebookId: '',
+  phoneNumber: '',
+  organizationName: '',
+})
+
+const handleAccountTypeChange = () => {
+  if (accountType.value === 'organization') {
+    user.value.isOrganization = true
+    user.value.role = 'mentor'
+    user.value.firstName = ''
+    user.value.lastName = ''
+  } else {
+    user.value.isOrganization = false
+    user.value.role = 'mentee'
+    user.value.organizationName = ''
+  }
+}
+
+const handleSubmit = async () => {
+  error.value = ''
+  isSubmitting.value = true
+
+  try {
+    // Combine phone country code and number
+    user.value.phoneNumber = phoneCountryCode.value + phoneNumber.value
+
+    // Prepare payload matching the sample request structure
+    const payload = {
+      firstName: user.value.firstName || '',
+      lastName: user.value.lastName || '',
+      email: user.value.email,
+      password: user.value.password,
+      role: user.value.role,
+      googleId: user.value.googleId || '',
+      facebookId: user.value.facebookId || '',
+      isOrganization: user.value.isOrganization,
+      organizationName: user.value.organizationName || '',
+      phoneNumber: user.value.phoneNumber,
+      gender: user.value.gender || '',
+      dateOfBirth: user.value.dateOfBirth || '',
+      nationality: user.value.nationality || '',
+      country: user.value.country || '',
+      linkedIn: user.value.linkedIn || '',
+      twitter: user.value.twitter || '',
+      facebook: user.value.facebook || '',
+      youtube: user.value.youtube || '',
+      instagram: user.value.instagram || '',
+      skillsAndInterests: user.value.skillsAndInterests || [],
+      bio: user.value.bio || '',
+    }
+
+    const { post } = useApi()
+    const response = await post('/auth/register', payload)
+
+    if (response.status === 200 || response.status === 201) {
+      // Success - redirect to sign in or show success message
+      navigateTo('/auth/sign-in')
+    } else {
+      error.value = 'Registration failed. Please try again.'
+    }
+  } catch (e: any) {
+    console.error('Registration error:', e)
+    error.value = e?.data?.message || 'Registration failed. Please try again.'
+  } finally {
+    isSubmitting.value = false
+  }
+}
 </script>
 
 <style scoped>

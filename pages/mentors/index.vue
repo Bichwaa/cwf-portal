@@ -28,6 +28,7 @@ const mentors = ref<MentorProfile[]>([{
     firstName: 'John',
     lastName: 'Doe',
     role: 'mentor',
+    isOrganization: false,
     __v: 0,
     email: 'john.doe@example.com',
     phoneNumber: '1234567890',

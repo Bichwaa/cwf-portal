@@ -17,7 +17,10 @@ export interface Rating {
     _id: string;
     firstName: string;
     lastName: string;
+    isOrganization: boolean,
+    organizationName?:string,
     email: string;
+    password?:string,
     role: 'mentor' | 'mentee' | 'admin'; // Using a union type for common roles
     googleId?: string;
     facebookId?: string;

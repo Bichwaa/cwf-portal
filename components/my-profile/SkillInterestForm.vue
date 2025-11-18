@@ -9,7 +9,7 @@
         <div>
           <input 
             v-model="newSkill"
-            @keydown.enter="addSkill"
+            @keydown.enter.prevent="addSkill"
             type="text" 
             placeholder="Enter skill or interest and press &quot;enter&quot;" 
             class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -19,7 +19,7 @@
         <!-- Skills Tags -->
         <div class="flex flex-wrap gap-2">
           <div 
-            v-for="(skill, index) in skills" 
+            v-for="(skill, index) in localUser.skillsAndInterests" 
             :key="index"
             class="flex items-center bg-gray-100 text-gray-700 px-3 py-1 rounded-lg text-sm"
           >
@@ -40,19 +40,46 @@
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
+import type { User } from '~/types';
+
+const props = defineProps<{
+  user: User;
+}>();
+
+const emit = defineEmits<{
+  'update:user': [value: User];
+}>();
+
+const localUser = computed({
+  get: () => props.user,
+  set: (value) => emit('update:user', value)
+});
 
 const newSkill = ref('');
-const skills = ref(['Teaching', 'Event planning']);
+
+// Initialize skills array if it doesn't exist
+if (!localUser.value.skillsAndInterests) {
+  localUser.value.skillsAndInterests = [];
+}
 
 const addSkill = () => {
-  if (newSkill.value.trim() && !skills.value.includes(newSkill.value.trim())) {
-    skills.value.push(newSkill.value.trim());
+  if (newSkill.value.trim() && !localUser.value.skillsAndInterests?.includes(newSkill.value.trim())) {
+    if (!localUser.value.skillsAndInterests) {
+      localUser.value.skillsAndInterests = [];
+    }
+    localUser.value.skillsAndInterests.push(newSkill.value.trim());
     newSkill.value = '';
+    // Trigger update
+    emit('update:user', { ...localUser.value });
   }
 };
 
 const removeSkill = (index: number) => {
-  skills.value.splice(index, 1);
+  if (localUser.value.skillsAndInterests) {
+    localUser.value.skillsAndInterests.splice(index, 1);
+    // Trigger update
+    emit('update:user', { ...localUser.value });
+  }
 };
 </script>
