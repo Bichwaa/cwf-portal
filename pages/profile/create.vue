@@ -14,8 +14,44 @@
       </div>
     </ProfileBanner>
     
-    <!-- Account Type Selection (only show if not set) -->
-    <div v-if="!accountType" class="container mx-auto px-4 py-8">
+    <!-- Role Selection (Mentee or Mentor) -->
+    <div v-if="!userRole" class="container mx-auto px-4 py-8">
+      <div class="max-w-2xl mx-auto">
+        <h3 class="text-2xl text-start font-medium text-gray-700 mb-6">Select Your Role</h3>
+        <div class="space-y-4">
+          <label
+            @click="selectUserRole('mentee')"
+            class="border-2 rounded-lg p-6 flex items-center space-x-4 cursor-pointer hover:border-blue-500 transition-colors"
+            :class="userRole === 'mentee' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'"
+          >
+            <div :class="['w-5 h-5 p-1 rounded-full border-2 flex items-center justify-center', userRole === 'mentee' ? 'border-blue-500' : 'border-gray-300']">
+              <span v-if="userRole === 'mentee'" class="w-2.5 h-2.5 bg-blue-500 rounded-full"></span>
+            </div>
+            <div class="text-left">
+              <h3 class="font-semibold text-lg">Mentee</h3>
+              <p class="text-sm text-gray-500">Register as a mentee seeking guidance</p>
+            </div>
+          </label>
+
+          <label
+            @click="selectUserRole('mentor')"
+            class="border-2 rounded-lg p-6 flex items-center space-x-4 cursor-pointer hover:border-blue-500 transition-colors"
+            :class="userRole === 'mentor' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'"
+          >
+            <div :class="['w-5 h-5 rounded-full p-1 border-2 flex items-center justify-center', userRole === 'mentor' ? 'border-blue-500' : 'border-gray-300']">
+              <span v-if="userRole === 'mentor'" class="w-2.5 h-2.5 bg-blue-500 rounded-full"></span>
+            </div>
+            <div class="text-left">
+              <h3 class="font-semibold text-lg">Mentor</h3>
+              <p class="text-sm text-gray-500">Register as a mentor to provide guidance</p>
+            </div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Account Type Selection (only show if mentor is selected and account type not set) -->
+    <div v-else-if="userRole === 'mentor' && !accountType" class="container mx-auto px-4 py-8">
       <div class="max-w-2xl mx-auto">
         <h3 class="text-2xl text-start font-medium text-gray-700 mb-6">Select Account Type</h3>
         <div class="space-y-4">
@@ -29,7 +65,7 @@
             </div>
             <div class="text-left">
               <h3 class="font-semibold text-lg">Individual</h3>
-              <p class="text-sm text-gray-500">Register as an individual user</p>
+              <p class="text-sm text-gray-500">Register as an individual mentor</p>
             </div>
           </label>
 
@@ -50,7 +86,7 @@
       </div>
     </div>
 
-    <div v-else class="flex px-20">
+    <div v-else-if="(userRole === 'mentee') || (userRole === 'mentor' && accountType)" class="flex px-20">
       <!-- Left Navigation -->
       <div class="w-64 bg-white">
         <div class="p-6">
@@ -81,7 +117,7 @@
       <div v-if="formStep === 1" class="flex-1">
         <PersonalInfoForm 
           v-model:user="user"
-          :account-type="accountType"
+          :account-type="accountType || 'individual'"
           :phone-country-code="phoneCountryCode"
           @update:phone-country-code="phoneCountryCode = $event"
         />
@@ -110,8 +146,8 @@
       />
     </div>
     <!-- Continue Button -->
-    <hr v-if="accountType" class="border-gray-300 w-full mt-12"/>
-    <div v-if="accountType" class="mt-8 flex justify-end px-56 pb-8">
+    <hr v-if="(userRole === 'mentee') || (userRole === 'mentor' && accountType)" class="border-gray-300 w-full mt-12"/>
+    <div v-if="(userRole === 'mentee') || (userRole === 'mentor' && accountType)" class="mt-8 flex justify-end px-56 pb-8">
       <button 
         v-if="formStep <= 2"
         @click="formStep++"
@@ -148,6 +184,7 @@ definePageMeta({
 
 const formStep = ref(1);
 const loading = ref(false);
+const userRole = ref<'mentee' | 'mentor' | null>(null);
 const accountType = ref<'individual' | 'organization' | null>(null);
 const phoneCountryCode = ref('+234');
 const isSubmitting = ref(false);
@@ -179,16 +216,31 @@ const user = ref<User>({
   bio: '',
 });
 
+const selectUserRole = (role: 'mentee' | 'mentor') => {
+  userRole.value = role;
+  user.value.role = role;
+  
+  if (role === 'mentee') {
+    // For mentees, set defaults and skip account type selection
+    user.value.isOrganization = false;
+    user.value.organizationName = '';
+    accountType.value = null; // No account type needed for mentees
+  } else {
+    // For mentors, reset account type to show selection
+    accountType.value = null;
+    user.value.isOrganization = false;
+    user.value.organizationName = '';
+  }
+};
+
 const selectAccountType = (type: 'individual' | 'organization') => {
   accountType.value = type;
   if (type === 'organization') {
     user.value.isOrganization = true;
-    user.value.role = 'mentor';
     user.value.firstName = '';
     user.value.lastName = '';
   } else {
     user.value.isOrganization = false;
-    user.value.role = 'mentee';
     user.value.organizationName = '';
   }
 };
@@ -199,6 +251,22 @@ const handleSubmit = async () => {
   loading.value = true;
 
   try {
+    // Validate role is selected
+    if (!userRole.value) {
+      error.value = 'Please select a role (Mentee or Mentor)';
+      loading.value = false;
+      isSubmitting.value = false;
+      return;
+    }
+
+    // Validate account type for mentors
+    if (userRole.value === 'mentor' && !accountType.value) {
+      error.value = 'Please select an account type';
+      loading.value = false;
+      isSubmitting.value = false;
+      return;
+    }
+
     // Combine phone country code and number
     // The phoneNumber from PersonalInfoForm is just the number part
     if (user.value.phoneNumber && !user.value.phoneNumber.startsWith('+')) {
@@ -211,7 +279,7 @@ const handleSubmit = async () => {
     // Prepare payload matching the SignUpForm structure
     const payload = {
       firstName: user.value.firstName || '',
-      lastName: user.value.lastName || '',
+      surname: user.value.lastName || '',
       email: user.value.email,
       password: user.value.password || '',
       role: user.value.role,
@@ -234,7 +302,13 @@ const handleSubmit = async () => {
     };
 
     const { post } = useApi();
-    const response = await post('/auth/register', payload);
+    
+    // Use different endpoints based on role
+    const endpoint = userRole.value === 'mentor' 
+      ? '/mentorship/mentors/register-mentor'
+      : '/mentorship/mentees/create';
+    
+    const response = await post(endpoint, payload);
 
     if (response.status === 200 || response.status === 201) {
       // Success - redirect to sign in or profile

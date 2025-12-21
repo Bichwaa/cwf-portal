@@ -326,7 +326,7 @@ onMounted(async () => {
 
   try {
     const { get } = useApi()
-    const me = await get<any>('/auth/me', {
+    const me = await get<any>('/auth/profile/me', {
       headers: { authorization: `Bearer ${token}` }
     })
     currentUserId.value = me.data._id

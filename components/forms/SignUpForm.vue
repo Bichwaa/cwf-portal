@@ -42,8 +42,22 @@
 
         <!-- Form Fields -->
         <div class="space-y-4">
-          <!-- Account Type -->
+          <!-- Role Selection (Mentee or Mentor) -->
           <div class="relative">
+            <select v-model="selectedRole" @change="handleRoleChange" class="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-700 appearance-none cursor-pointer">
+              <option value="">Select Role</option>
+              <option value="mentee">Mentee</option>
+              <option value="mentor">Mentor</option>
+            </select>
+            <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+              <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Account Type (shown only for mentors) -->
+          <div v-if="selectedRole === 'mentor'" class="relative">
             <select v-model="accountType" @change="handleAccountTypeChange" class="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-700 appearance-none cursor-pointer">
               <option value="individual">Individual</option>
               <option value="organization">Organization</option>
@@ -55,8 +69,8 @@
             </div>
           </div>
 
-          <!-- Organization Name (shown only for organizations) -->
-          <div v-if="accountType === 'organization'">
+          <!-- Organization Name (shown only for mentor organizations) -->
+          <div v-if="selectedRole === 'mentor' && accountType === 'organization'">
             <input 
               v-model="user.organizationName" 
               type="text" 
@@ -66,8 +80,8 @@
             >
           </div>
 
-          <!-- Name Fields (shown only for individuals) -->
-          <div v-if="accountType === 'individual'" class="grid grid-cols-2 gap-3">
+          <!-- Name Fields (shown for mentees or mentor individuals) -->
+          <div v-if="selectedRole === 'mentee' || (selectedRole === 'mentor' && accountType === 'individual')" class="grid grid-cols-2 gap-3">
             <input 
               v-model="user.firstName" 
               type="text" 
@@ -156,6 +170,7 @@
 <script lang="ts" setup>
 import type { User} from '../../types';
 
+const selectedRole = ref<'mentee' | 'mentor' | ''>('')
 const accountType = ref<'individual' | 'organization'>('individual')
 const phoneCountryCode = ref('+234')
 const phoneNumber = ref('')
@@ -177,24 +192,61 @@ const user = ref<User>({
   organizationName: '',
 })
 
+const handleRoleChange = () => {
+  if (selectedRole.value === 'mentee') {
+    // Mentees are always individuals
+    user.value.role = 'mentee'
+    user.value.isOrganization = false
+    user.value.organizationName = ''
+    accountType.value = 'individual'
+  } else if (selectedRole.value === 'mentor') {
+    // Mentors can be individual or organization
+    user.value.role = 'mentor'
+    // Reset account type to individual by default
+    accountType.value = 'individual'
+    handleAccountTypeChange()
+  } else {
+    // Reset everything if no role selected
+    user.value.role = 'mentee'
+    user.value.isOrganization = false
+    user.value.organizationName = ''
+    user.value.firstName = ''
+    user.value.lastName = ''
+  }
+}
+
 const handleAccountTypeChange = () => {
   if (accountType.value === 'organization') {
     user.value.isOrganization = true
-    user.value.role = 'mentor'
     user.value.firstName = ''
     user.value.lastName = ''
   } else {
     user.value.isOrganization = false
-    user.value.role = 'mentee'
     user.value.organizationName = ''
   }
 }
 
 const handleSubmit = async () => {
   error.value = ''
+  
+  // Validate role selection
+  if (!selectedRole.value) {
+    error.value = 'Please select a role (Mentee or Mentor)'
+    return
+  }
+
+  // Validate account type for mentors
+  if (selectedRole.value === 'mentor' && !accountType.value) {
+    error.value = 'Please select an account type'
+    return
+  }
+
   isSubmitting.value = true
 
   try {
+    // Ensure role is set correctly
+    user.value.role = selectedRole.value as 'mentee' | 'mentor'
+    
     // Combine phone country code and number
     user.value.phoneNumber = phoneCountryCode.value + phoneNumber.value
 
@@ -224,7 +276,7 @@ const handleSubmit = async () => {
     }
 
     const { post } = useApi()
-    const response = await post('/auth/register', payload)
+    const response = await post('/auth/users/register', payload)
 
     if (response.status === 200 || response.status === 201) {
       // Success - redirect to sign in or show success message

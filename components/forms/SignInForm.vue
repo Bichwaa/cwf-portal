@@ -160,7 +160,7 @@ const handleSubmit = async () => {
   try {
     const { post } = useApi()
     const response = await post<{ accessToken?: string; refreshToken?: string, user: { role: string } }, { email: string; password: string }>(
-      '/auth/login',
+      '/auth/users/login',
       {
         email: formData.value.email,
         password: formData.value.password

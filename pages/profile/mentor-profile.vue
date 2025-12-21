@@ -273,7 +273,7 @@ onMounted(async () => {
 
   try {
     const { get } = useApi()
-    const me = await get<UserMe>('/auth/me', {
+    const me = await get<UserMe>('/auth/profile/me', {
       headers: { authorization: `Bearer ${token}` }
     })
     // getMentorshipRequests handles its own errors internally

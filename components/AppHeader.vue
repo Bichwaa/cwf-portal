@@ -164,9 +164,10 @@ const fetchNotifications = async () => {
 
   try {
     const { get } = useApi()
-    const response = await get<any>('/notifications', {
-      headers: { authorization: `Bearer ${token}` }
-    })
+    // const response = await get<any>('/notifications', {
+    //   headers: { authorization: `Bearer ${token}` }
+    // })
+    const response = { data: {data:[], notifications:[]} }
     
     let notificationArray: any[] = []
     

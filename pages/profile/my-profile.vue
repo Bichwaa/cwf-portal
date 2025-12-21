@@ -221,10 +221,10 @@ onMounted(async () => {
 
   try {
     const { get } = useApi()
-    const me = await get<User>('/auth/me', {
+    const me = await get<{user:User}>('/auth/users/profile/me', {
       headers: { authorization: `Bearer ${token}` }
     })
-    user.value = me.data
+    user.value = me.data.user
   } catch (e) {
     error.value = 'Failed to load profile'
   } finally {

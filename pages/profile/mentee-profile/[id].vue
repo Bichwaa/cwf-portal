@@ -247,7 +247,7 @@ onMounted(async () => {
     const { get } = useApi()
     
     // Fetch current user
-    const userResponse = await get<any>('/auth/me', {
+    const userResponse = await get<any>('/auth/profile/me', {
       headers: { authorization: `Bearer ${token}` }
     })
     currentUser.value = {
