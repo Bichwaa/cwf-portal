@@ -143,6 +143,9 @@
       <SkillInterestForm 
         v-if="formStep === 3" 
         v-model:user="user"
+        :goals="goals"
+        :show-goals="userRole === 'mentee'"
+        @update:goals="goals = $event"
       />
     </div>
     <!-- Continue Button -->
@@ -216,6 +219,15 @@ const user = ref<User>({
   bio: '',
 });
 
+// Additional field for mentee registration
+const goals = ref<string[]>([]);
+
+// Additional fields for mentor registration
+const yearsOfExperience = ref(0);
+const profilePicture = ref('');
+const availabilityStatus = ref('available');
+const maxMentees = ref(4);
+
 const selectUserRole = (role: 'mentee' | 'mentor') => {
   userRole.value = role;
   user.value.role = role;
@@ -276,37 +288,69 @@ const handleSubmit = async () => {
       // For now, we'll leave it empty
     }
 
-    // Prepare payload matching the SignUpForm structure
-    const payload = {
-      firstName: user.value.firstName || '',
-      surname: user.value.lastName || '',
-      email: user.value.email,
-      password: user.value.password || '',
-      role: user.value.role,
-      googleId: user.value.googleId || '',
-      facebookId: user.value.facebookId || '',
-      isOrganization: user.value.isOrganization,
-      organizationName: user.value.organizationName || '',
-      phoneNumber: user.value.phoneNumber || '',
-      gender: user.value.gender || '',
-      dateOfBirth: user.value.dateOfBirth || '',
-      nationality: user.value.nationality || '',
-      country: user.value.country || '',
-      linkedIn: user.value.linkedIn || '',
-      twitter: user.value.twitter || '',
-      facebook: user.value.facebook || '',
-      youtube: user.value.youtube || '',
-      instagram: user.value.instagram || '',
-      skillsAndInterests: user.value.skillsAndInterests || [],
-      bio: user.value.bio || '',
-    };
-
     const { post } = useApi();
     
     // Use different endpoints based on role
     const endpoint = userRole.value === 'mentor' 
       ? '/mentorship/mentors/register-mentor'
       : '/mentorship/mentees/create';
+    
+    let payload: any;
+
+    if (userRole.value === 'mentor') {
+      // Mentor payload matches the nested structure in payload.json
+      payload = {
+        password: user.value.password || '',
+        isOrganization: user.value.isOrganization,
+        organizationName: user.value.organizationName || '',
+        contacts: {
+          email: user.value.email,
+          phoneNumber: user.value.phoneNumber || '',
+        },
+        personalInfo: {
+          firstName: user.value.firstName || '',
+          surname: user.value.lastName || '',
+          gender: user.value.gender || '',
+          dateOfBirth: user.value.dateOfBirth || '',
+          nationality: user.value.nationality || '',
+          countryOfResidence: user.value.country || '',
+        },
+        socialMedia: {
+          linkedin: user.value.linkedIn || '',
+          twitter: user.value.twitter || '',
+        },
+        bio: user.value.bio || '',
+        skillsAndInterests: user.value.skillsAndInterests || [],
+        yearsOfExperience: yearsOfExperience.value || 0,
+        profilePicture: profilePicture.value || '',
+        availabilityStatus: availabilityStatus.value || 'available',
+        maxMentees: maxMentees.value || 4,
+      };
+    } else {
+      // Mentee payload matches the nested structure in mentee_payload.json
+      payload = {
+        password: user.value.password || '',
+        contacts: {
+          email: user.value.email,
+          phoneNumber: user.value.phoneNumber || '',
+        },
+        personalInfo: {
+          firstName: user.value.firstName || '',
+          surname: user.value.lastName || '',
+          gender: user.value.gender || '',
+          dateOfBirth: user.value.dateOfBirth || '',
+          nationality: user.value.nationality || '',
+          countryOfResidence: user.value.country || '',
+        },
+        socialMedia: {
+          linkedin: user.value.linkedIn || '',
+          instagram: user.value.instagram || '',
+        },
+        bio: user.value.bio || '',
+        skillsAndInterests: user.value.skillsAndInterests || [],
+        goals: goals.value || [],
+      };
+    }
     
     const response = await post(endpoint, payload);
 
