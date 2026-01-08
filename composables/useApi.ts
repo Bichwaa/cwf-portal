@@ -13,36 +13,69 @@ export interface ApiResponse<TData = unknown> {
   status: number
 }
 
-function mergeHeaders(defaults: ApiHeaders, overrides?: ApiHeaders): ApiHeaders {
-  return { ...defaults, ...(overrides || {}) }
+function mergeHeaders(defaults: ApiHeaders, overrides?: ApiHeaders, body?: any): ApiHeaders {
+  const merged = { ...defaults, ...(overrides || {}) };
+  
+  // If body is FormData, remove Content-Type header - browser will set it automatically with boundary
+  if (body instanceof FormData) {
+    delete merged['Content-Type'];
+  }
+  
+  return merged;
 }
 
+/**
+ * Read tokens from cookies (not localStorage)
+ */
+function getAccessToken() {
+  const tokenCookie = useCookie<string | null>("auth_token");
+  return tokenCookie.value;
+}
+
+function getRefreshToken() {
+  const tokenCookie = useCookie<string | null>("refresh_token");
+  return tokenCookie.value;
+}
+
+/**
+ * Refresh token using cookies
+ */
 async function refreshToken(): Promise<string | null> {
-  const refreshToken = localStorage.getItem('refresh_token')
-  if (!refreshToken) return null
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
 
   try {
-    const config = useRuntimeConfig()
-    const response = await $fetch<{ accessToken: string }>(`${config.public.backendRootUrl}/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${refreshToken}`
+    const config = useRuntimeConfig();
+    const response = await $fetch<{ accessToken: string; refreshToken: string }>(
+      `${config.public.backendRootUrl}/auth/users/refresh-token`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: {
+          refreshToken: refreshToken,
+        },
       }
-    })
+    );
 
     if (response.accessToken) {
-      localStorage.setItem('auth_token', response.accessToken)
-      return response.accessToken
+      const tokenCookie = useCookie<string | null>("auth_token");
+      const refreshTokenCookie = useCookie<string | null>("refresh_token");
+      tokenCookie.value = response.accessToken;
+      if (response.refreshToken) {
+        refreshTokenCookie.value = response.refreshToken;
+      }
+
+      return response.accessToken;
     }
   } catch (error) {
-    console.error('Token refresh failed:', error)
-    // Clear invalid tokens
-    localStorage.removeItem('auth_token')
-    localStorage.removeItem('refresh_token')
+    console.error("Token refresh failed:", error);
+    useCookie("auth_token").value = null;
+    useCookie("refresh_token").value = null;
   }
 
-  return null
+  return null;
 }
 
 async function makeRequest<TResponse>(
@@ -50,98 +83,105 @@ async function makeRequest<TResponse>(
   options: any,
   retryCount = 0
 ): Promise<ApiResponse<TResponse>> {
-  const maxRetries = 1
+  const maxRetries = 1;
 
   try {
-    const response = await $fetch.raw<TResponse>(url, options)
+    const response = await $fetch.raw<TResponse>(url, {
+      ...options,
+      credentials: "include", // ⬅ important for cookies
+    });
+
     return {
       data: response._data as TResponse,
-      status: response.status
-    }
+      status: response.status,
+    };
   } catch (error: any) {
-    // Handle 401 Unauthorized with token refresh
     if (error.status === 401 && retryCount < maxRetries) {
-      const newToken = await refreshToken()
-      
+      const newToken = await refreshToken();
       if (newToken) {
-        // Update authorization header and retry
         const updatedOptions = {
           ...options,
           headers: {
             ...options.headers,
-            'Authorization': `Bearer ${newToken}`
-          }
-        }
-        
-        return await makeRequest<TResponse>(url, updatedOptions, retryCount + 1)
+            Authorization: `Bearer ${newToken}`,
+          },
+        };
+        return await makeRequest<TResponse>(url, updatedOptions, retryCount + 1);
       } else {
-        // Refresh failed, redirect to login
-        await navigateTo('/auth/sign-in')
-        throw error
+        await navigateTo("/auth/sign-in");
+        throw error;
       }
     }
-    
-    throw error
+    throw error;
   }
 }
 
 export function useApi() {
-  const config = useRuntimeConfig()
-  const baseURL = config.public.backendRootUrl
+  const config = useRuntimeConfig();
+  const baseURL = config.public.backendRootUrl;
 
-  const defaultHeaders: ApiHeaders = {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json'
+  // Create headers dynamically to always get the latest token
+  function getDefaultHeaders(body?: any): ApiHeaders {
+    return {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getAccessToken() ?? ""}`,
+    };
   }
 
-  async function get<TResponse = unknown>(path: string, options: ApiOptions | undefined = undefined) {
-    return await makeRequest<TResponse>(`${baseURL}${path}`, {
-      method: 'GET',
-      headers: mergeHeaders(defaultHeaders, options?.headers),
-      query: options?.query
-    })
+  async function get<TResponse>(path: string, options?: ApiOptions) {
+    return makeRequest<TResponse>(`${baseURL}${path}`, {
+      method: "GET",
+      headers: mergeHeaders(getDefaultHeaders(), options?.headers),
+      query: options?.query,
+    });
   }
 
-  async function post<
-    TResponse = unknown,
-    TBody extends FetchBody = FetchBody
-  >(path: string, body?: TBody, options: ApiOptions<TBody> | undefined = undefined) {
-    return await makeRequest<TResponse>(`${baseURL}${path}`, {
-      method: 'POST',
-      headers: mergeHeaders(defaultHeaders, options?.headers),
-      body: (body ?? options?.body) as FetchBody
-    })
+  async function post<TResponse, TBody extends FetchBody>(
+    path: string,
+    body?: TBody,
+    options?: ApiOptions<TBody>
+  ) {
+    const requestBody = (body ?? options?.body) as FetchBody;
+    return makeRequest<TResponse>(`${baseURL}${path}`, {
+      method: "POST",
+      headers: mergeHeaders(getDefaultHeaders(requestBody), options?.headers, requestBody),
+      body: requestBody,
+    });
   }
 
-  async function put<
-    TResponse = unknown,
-    TBody extends FetchBody = FetchBody
-  >(path: string, body?: TBody, options: ApiOptions<TBody> | undefined = undefined) {
-    return await makeRequest<TResponse>(`${baseURL}${path}`, {
-      method: 'PUT',
-      headers: mergeHeaders(defaultHeaders, options?.headers),
-      body: (body ?? options?.body) as FetchBody
-    })
+  async function put<TResponse, TBody extends FetchBody>(
+    path: string,
+    body?: TBody,
+    options?: ApiOptions<TBody>
+  ) {
+    const requestBody = (body ?? options?.body) as FetchBody;
+    return makeRequest<TResponse>(`${baseURL}${path}`, {
+      method: "PUT",
+      headers: mergeHeaders(getDefaultHeaders(requestBody), options?.headers, requestBody),
+      body: requestBody,
+    });
   }
 
-  async function patch<
-    TResponse = unknown,
-    TBody extends FetchBody = FetchBody
-  >(path: string, body?: TBody, options: ApiOptions<TBody> | undefined = undefined) {
-    return await makeRequest<TResponse>(`${baseURL}${path}`, {
-      method: 'PATCH',
-      headers: mergeHeaders(defaultHeaders, options?.headers),
-      body: (body ?? options?.body) as FetchBody
-    })
+  async function patch<TResponse, TBody extends FetchBody>(
+    path: string,
+    body?: TBody,
+    options?: ApiOptions<TBody>
+  ) {
+    return makeRequest<TResponse>(`${baseURL}${path}`, {
+      method: "PATCH",
+      headers: mergeHeaders(getDefaultHeaders(), options?.headers),
+      body: (body ?? options?.body) as FetchBody,
+    });
   }
 
-  async function del<TResponse = unknown>(path: string, options: ApiOptions | undefined = undefined) {
-    return await makeRequest<TResponse>(`${baseURL}${path}`, {
-      method: 'DELETE',
-      headers: mergeHeaders(defaultHeaders, options?.headers),
-      body: options?.body as FetchBody
-    })
+  async function del<TResponse>(path: string, options?: ApiOptions) {
+    return makeRequest<TResponse>(`${baseURL}${path}`, {
+      method: "DELETE",
+      headers: mergeHeaders(getDefaultHeaders(), options?.headers),
+      body: options?.body as FetchBody,
+    });
   }
 
-  return { get, post, put, patch, del }
+  return { get, post, put, patch, del };
 }

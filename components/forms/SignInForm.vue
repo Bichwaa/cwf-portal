@@ -169,10 +169,14 @@ const handleSubmit = async () => {
 
     // Handle successful login
     if (response.data.accessToken && response.data.refreshToken) {
-      // Store token in localStorage or cookie
-      localStorage.setItem('auth_token', response.data.accessToken)
-      localStorage.setItem('refresh_token', response.data.refreshToken)
-      localStorage.setItem('user', JSON.stringify(response.data.user))
+      // Store tokens in cookies (not localStorage)
+      const authTokenCookie = useCookie<string | null>('auth_token')
+      const refreshTokenCookie = useCookie<string | null>('refresh_token')
+      const userCookie = useCookie<string | null>('user')
+      
+      authTokenCookie.value = response.data.accessToken
+      refreshTokenCookie.value = response.data.refreshToken
+      userCookie.value = JSON.stringify(response.data.user)
       
       // Redirect to profile
       if (response.data.user?.role === 'mentor') {
