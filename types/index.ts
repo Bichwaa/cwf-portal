@@ -15,13 +15,22 @@ export interface Rating {
    */
   export interface User {
     _id: string;
+    userId?: string; // Custom user ID field (different from MongoDB _id)
     firstName: string;
     lastName: string;
     isOrganization: boolean,
     organizationName?:string,
     email: string;
     password?:string,
-    role: 'mentor' | 'mentee' | 'admin'; // Using a union type for common roles
+    role?: 'mentor' | 'mentee' | 'admin'; // Using a union type for common roles (legacy)
+    roles?: Array<{
+      _id: string;
+      roleId: string;
+      name: string;
+      code: string;
+      permissions?: string[];
+      status?: string;
+    }>; // Roles array from backend
     googleId?: string;
     facebookId?: string;
     phoneNumber?: string;
@@ -41,6 +50,41 @@ export interface Rating {
     lastModifiedAt?: string; // ISO 8601 Date String
     __v: number;
     id?: string;
+    // Metadata from backend
+    metadata?: {
+      gender?: string;
+      dateOfBirth?: string;
+      nationality?: string;
+      countryOfResidence?: string;
+      socialLinks?: {
+        linkedin?: string;
+        twitter?: string;
+        facebook?: string;
+        youtube?: string;
+        instagram?: string;
+      };
+    };
+    // Mentee data from backend
+    mentee?: {
+      skillsAndInterests?: string[];
+      goals?: string[];
+      bio?: string;
+    };
+    // Mentor data from backend
+    mentor?: {
+      skillsAndInterests?: string[];
+      bio?: string;
+    };
+    // Profile picture can be an ObjectId reference (populated as object with url) or null
+    profilePicture?: {
+      url?: string;
+      attachmentId?: string;
+      name?: string;
+      fileType?: string;
+      size?: number;
+      _id?: string;
+      buffer?: string; // Edge case: incorrectly saved as buffer
+    } | string | null;
   }
   
   /**

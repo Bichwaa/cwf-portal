@@ -2,7 +2,7 @@
   <div class="min-h-screen bg-gray-100 p-8">
     <!-- Loading State -->
     <div v-if="isLoading" class="flex items-center justify-center min-h-screen">
-      <p class="text-gray-600">Loading mentor profile...</p>
+      <p class="text-gray-600">Loading mentee profile...</p>
     </div>
     
     <!-- Error State -->
@@ -24,8 +24,14 @@
         <div class="bg-white rounded-2xl shadow-sm p-6">
           <div class="flex items-start justify-between">
             <div class="flex items-center space-x-4">
-              <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                <svg class="w-10 h-10 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+              <div class="w-16 h-16 bg-blue-100 rounded-lg overflow-hidden flex items-center justify-center">
+                <img 
+                  v-if="profilePictureUrl" 
+                  :src="profilePictureUrl" 
+                  :alt="mentor?.user?.firstName || 'User'" 
+                  class="w-full h-full object-cover"
+                />
+                <svg v-else class="w-10 h-10 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
                   <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
                 </svg>
               </div>
@@ -195,6 +201,26 @@ const formatName = (name: string): string => {
   return shortenedWords.join(' ')
 }
 
+// Extract profile picture URL
+// Backend returns profilePicture as a URL string
+const profilePictureUrl = computed(() => {
+  if (!mentor.value) return null
+  const profilePic = (mentor.value.user as any)?.profilePicture
+  if (!profilePic) return null
+  
+  // Backend transforms profilePicture to return just the URL string
+  if (typeof profilePic === 'string') {
+    return profilePic
+  }
+  
+  // Fallback: if it's still an object (shouldn't happen with new backend, but handle for compatibility)
+  if (typeof profilePic === 'object' && profilePic.url) {
+    return profilePic.url
+  }
+  
+  return null
+})
+
 const switchPanel = (panel: number) => {
   activePanel.value = panel
 }
@@ -205,29 +231,26 @@ const closeSuccessModal = () => {
 
 const handleAcceptRequest = async () => {
   if (!mentor.value || !currentUser.value) {
-    alert('Unable to request mentorship. Please try again.')
+    alert('Unable to accept request. Please try again.')
     return
   }
 
   isRequesting.value = true
-  const token = localStorage.getItem('auth_token')
 
   try {
     const { put } = useApi()
 
-    const response = await put(`/mentorship/mentorships/${route.params.id}/accept-mentee`, {
-      headers: { authorization: `Bearer ${token}` }
-    })
+    const response = await put(`/mentorship/mentorships/${route.params.id}/accept-mentee`)
 
     if (response.status === 200 || response.status === 201) {
       isRequestSuccessful.value = true
       showSuccessModal.value = true
     } else {
-      alert('Failed to send mentorship request. Please try again.')
+      alert('Failed to accept mentorship request. Please try again.')
     }
   } catch (e) {
-    console.error('Error requesting mentorship:', e)
-    alert('Failed to send mentorship request. Please try again.')
+    console.error('Error accepting mentorship request:', e)
+    alert('Failed to accept mentorship request. Please try again.')
   } finally {
     isRequesting.value = false
   }
@@ -235,34 +258,85 @@ const handleAcceptRequest = async () => {
 
 onMounted(async () => {
   const menteeId = route.params.id as string
-  const token = localStorage.getItem('auth_token')
-  
-  if (!token) {
-    isLoading.value = false
-    error.value = 'Not authenticated'
-    return
-  }
 
   try {
     const { get } = useApi()
+    // useApi automatically handles authentication and token refresh
     
     // Fetch current user
-    const userResponse = await get<any>('/auth/profile/me', {
-      headers: { authorization: `Bearer ${token}` }
-    })
+    const userResponse = await get<{user: {_id: string; userId: string; role?: string}}>('/auth/users/profile/me')
     currentUser.value = {
-      _id: userResponse.data._id,
-      role: userResponse.data.role || 'mentee'
+      _id: userResponse.data.user._id,
+      role: userResponse.data.user.role || 'mentee'
     }
 
-    // Fetch mentor profile
-    const mentorResponse = await get<MentorProfile>(`/auth/users/${menteeId}`, {
-      headers: { authorization: `Bearer ${token}` }
-    })
-    mentor.value = mentorResponse.data
-  } catch (e) {
-    error.value = 'Failed to load mentor profile'
-    console.error('Error loading mentor:', e)
+    // Fetch mentee profile
+    const menteeResponse = await get<{
+      profile: {
+        menteeId: string
+        personalInfo: {
+          firstName: string
+          surname: string
+          email?: string
+          phoneNumber?: string
+          gender?: string
+          dateOfBirth?: string
+          nationality?: string
+          countryOfResidence?: string
+          profileImage?: string | null
+        }
+        skillsAndInterests?: string[]
+        goals?: string[]
+        bio?: string
+        socialMedia?: {
+          linkedin?: string
+          twitter?: string
+          facebook?: string
+          youtube?: string
+          instagram?: string
+        }
+        status?: string
+        meta?: {
+          createdAt?: string
+          lastModifiedAt?: string
+        }
+      }
+    }>(`/mentorship/mentees/${menteeId}/profile`)
+    
+    const menteeData = menteeResponse.data.profile
+    
+    // Transform mentee profile data to match component expectations
+    mentor.value = {
+      mentorId: menteeData.menteeId,
+      user: {
+        firstName: menteeData.personalInfo?.firstName || '',
+        lastName: menteeData.personalInfo?.surname || '',
+        email: menteeData.personalInfo?.email || '',
+        phoneNumber: menteeData.personalInfo?.phoneNumber || '',
+        gender: menteeData.personalInfo?.gender || '',
+        dateOfBirth: menteeData.personalInfo?.dateOfBirth || '',
+        nationality: menteeData.personalInfo?.nationality || '',
+        country: menteeData.personalInfo?.countryOfResidence || '',
+        profilePicture: menteeData.personalInfo?.profileImage || null,
+        bio: menteeData.bio || '',
+        skillsAndInterests: menteeData.skillsAndInterests || [],
+        facebook: menteeData.socialMedia?.facebook || null,
+        twitter: menteeData.socialMedia?.twitter || null,
+        youtube: menteeData.socialMedia?.youtube || null,
+        linkedIn: menteeData.socialMedia?.linkedin || null,
+        instagram: menteeData.socialMedia?.instagram || null,
+      },
+      languages: [], // Mentees don't have languages field
+      availabilityStatus: 'available', // Default for mentees
+    } as unknown as MentorProfile
+  } catch (e: any) {
+    // useApi will redirect to sign-in if authentication fails
+    if (e.status === 401 || e.statusCode === 401) {
+      error.value = 'Not authenticated'
+    } else {
+      error.value = 'Failed to load mentee profile'
+    }
+    console.error('Error loading mentee:', e)
   } finally {
     isLoading.value = false
   }

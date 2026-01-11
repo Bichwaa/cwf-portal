@@ -30,8 +30,23 @@
             v-if="isNotificationDropdownOpen" 
             class="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 overflow-y-auto"
           >
-            <div class="p-4 border-b border-gray-200">
+            <div class="p-4 border-b border-gray-200 flex items-center justify-between">
               <h3 class="text-sm font-semibold text-gray-800">Notifications</h3>
+              <div v-if="notifications.length > 0" class="flex items-center gap-2">
+                <button
+                  v-if="unreadCount > 0"
+                  @click.stop="markAllAsRead"
+                  class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  Mark all as read
+                </button>
+                <button
+                  @click.stop="clearAllNotifications"
+                  class="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                >
+                  Clear all
+                </button>
+              </div>
             </div>
             <div v-if="notifications.length === 0" class="p-4 text-center text-sm text-gray-500">
               No notifications
@@ -39,12 +54,19 @@
             <div v-else class="divide-y divide-gray-100">
               <div 
                 v-for="notification in notifications" 
-                :key="notification._id || notification.id"
-                class="p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                :key="notification._id || notification.id || notification.notificationId"
+                class="p-4 hover:bg-gray-50 transition-colors group"
+                :class="{ 'bg-gray-50/50': isNotificationRead(notification) }"
               >
                 <div class="flex items-start space-x-3">
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-800">
+                  <div 
+                    class="flex-1 min-w-0 cursor-pointer"
+                    @click="markAsRead(notification)"
+                  >
+                    <p 
+                      class="text-sm font-medium"
+                      :class="isNotificationRead(notification) ? 'text-gray-600' : 'text-gray-800'"
+                    >
                       {{ notification.title || notification.message || 'Notification' }}
                     </p>
                     <p v-if="notification.message && notification.title" class="text-xs text-gray-500 mt-1">
@@ -54,7 +76,18 @@
                       {{ formatNotificationDate(notification.createdAt) }}
                     </p>
                   </div>
-                  <div v-if="!notification.read" class="w-2 h-2 bg-blue-600 rounded-full mt-1.5 flex-shrink-0"></div>
+                  <div class="flex items-center gap-2">
+                    <div v-if="!isNotificationRead(notification)" class="w-2 h-2 bg-blue-600 rounded-full mt-1.5 flex-shrink-0"></div>
+                    <button
+                      @click.stop="deleteNotification(notification)"
+                      class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 rounded"
+                      title="Delete notification"
+                    >
+                      <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -85,7 +118,7 @@
             class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50"
           >
             <NuxtLink 
-              to="/profile/my-profile" 
+              :to="profileLink" 
               @click="toggleProfileDropdown"
               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
             >
@@ -117,6 +150,50 @@ const notificationCount = ref(0)
 const notifications = ref<any[]>([])
 let notificationPollInterval: ReturnType<typeof setInterval> | null = null
 
+// Helper function to check if user is a mentor
+const isMentor = (user: any): boolean => {
+  if (!user) return false
+  // Check if user has a mentor property (most reliable indicator)
+  if (user.mentor && typeof user.mentor === 'object') return true
+  // Check if user has a role property (legacy)
+  if (user.role === 'mentor') return true
+  // Check roles array for MENTOR code (if roles are populated objects)
+  if (Array.isArray(user.roles)) {
+    // Check if roles are objects with code/name (populated)
+    if (user.roles.some((role: any) => 
+      typeof role === 'object' && (role?.code === 'MENTOR' || role?.name === 'Mentor')
+    )) return true
+    // If roles are just IDs (strings), we can't determine from them alone
+    // So we rely on the mentor property check above
+  }
+  return false
+}
+
+// Computed property for profile link
+const profileLink = computed(() => {
+  const userCookie = useCookie<any>('user')
+  
+  if (userCookie.value) {
+    try {
+      // userCookie.value might already be an object (if useCookie auto-parsed it)
+      // or it might be a string (if it was stored as a string)
+      let user: any
+      if (typeof userCookie.value === 'string') {
+        user = JSON.parse(userCookie.value)
+      } else {
+        user = userCookie.value
+      }
+      
+      if (isMentor(user)) {
+        return '/profile/mentor-profile'
+      }
+    } catch (error) {
+      console.error('Failed to parse user from cookie:', error)
+    }
+  }
+  return '/profile/my-profile'
+})
+
 const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value
 }
@@ -138,8 +215,14 @@ const toggleNotificationDropdown = () => {
 }
 
 const handleLogout = () => {
-  // Clear all localStorage
-  localStorage.clear()
+  // Clear all cookies (auth tokens and user data)
+  const authTokenCookie = useCookie<string | null>('auth_token')
+  const refreshTokenCookie = useCookie<string | null>('refresh_token')
+  const userCookie = useCookie<string | null>('user')
+  
+  authTokenCookie.value = null
+  refreshTokenCookie.value = null
+  userCookie.value = null
   
   // Clear notification polling
   if (notificationPollInterval) {
@@ -155,8 +238,9 @@ const handleLogout = () => {
 }
 
 const fetchNotifications = async () => {
-  const token = localStorage.getItem('auth_token')
-  if (!token) {
+  // Check for token in cookies
+  const authToken = useCookie<string | null>('auth_token')
+  if (!authToken.value) {
     notificationCount.value = 0
     notifications.value = []
     return
@@ -164,36 +248,193 @@ const fetchNotifications = async () => {
 
   try {
     const { get } = useApi()
-    // const response = await get<any>('/notifications', {
-    //   headers: { authorization: `Bearer ${token}` }
-    // })
-    const response = { data: {data:[], notifications:[]} }
+    // useApi automatically includes the authorization header from cookies and handles token refresh
+    // The endpoint is /api/v1/notifications/user (useApi adds the baseURL)
+    const response = await get<any>('/notifications/user')
     
     let notificationArray: any[] = []
     
     // Handle different response structures
     if (response.data) {
-      // If response.data is an array
+      // If response.data is an array (direct array response)
       if (Array.isArray(response.data)) {
         notificationArray = response.data
       } 
-      // If response.data has a data array
+      // If response.data has a data array (from repository findAll - standard structure)
       else if (response.data.data && Array.isArray(response.data.data)) {
         notificationArray = response.data.data
       }
-      // If response.data has a notifications array
-      else if (response.data.notifications && Array.isArray(response.data.notifications)) {
-        notificationArray = response.data.notifications
+      // If response.data has a notifications array (alternative structure)
+      else if ((response.data as any).notifications && Array.isArray((response.data as any).notifications)) {
+        notificationArray = (response.data as any).notifications
       }
     }
     
     notifications.value = notificationArray
-    notificationCount.value = notificationArray.length
-  } catch (e) {
-    // Silently fail - don't show errors for notification fetching
+    // Update notification count using computed property
+    notificationCount.value = unreadCount.value
+  } catch (e: any) {
+    // If it's a 401, useApi should have already tried to refresh the token
+    // If refresh failed, it redirects to sign-in
+    // For 401 errors, just clear notifications silently (user will be redirected)
+    if (e.status === 401 || e.statusCode === 401) {
+      notificationCount.value = 0
+      notifications.value = []
+      // Don't log 401 errors - they're handled by useApi (token refresh or redirect)
+      return
+    }
+    // For other errors, silently fail - don't show errors for notification fetching
     console.error('Failed to fetch notifications:', e)
     notificationCount.value = 0
     notifications.value = []
+  }
+}
+
+// Get current user ID for checking read status
+const getCurrentUserId = (): string | null => {
+  const userCookie = useCookie<any>('user')
+  if (!userCookie.value) return null
+  
+  try {
+    const user = typeof userCookie.value === 'string' 
+      ? JSON.parse(userCookie.value) 
+      : userCookie.value
+    return user.userId || user._id || user.id || null
+  } catch {
+    return null
+  }
+}
+
+// Check if a notification is read by the current user
+const isNotificationRead = (notification: any): boolean => {
+  const currentUserId = getCurrentUserId()
+  if (!currentUserId) return false
+  
+  // Check if status is 'read'
+  if (notification.status === 'read') return true
+  
+  // Check if read property exists
+  if (notification.read === true) return true
+  
+  // Check metadata.readBy array
+  const readBy = notification.metadata?.readBy || []
+  const userIdString = String(currentUserId)
+  return readBy.some((id: any) => String(id) === userIdString)
+}
+
+// Computed property for unread count
+const unreadCount = computed(() => {
+  return notifications.value.filter((n: any) => !isNotificationRead(n)).length
+})
+
+// Mark a notification as read
+const markAsRead = async (notification: any) => {
+  if (isNotificationRead(notification)) return // Already read
+  
+  const notificationId = notification.notificationId || notification._id || notification.id
+  if (!notificationId) return
+  
+  try {
+    const { post } = useApi()
+    await post(`/notifications/${notificationId}/read`)
+    
+    // Update local state optimistically
+    const index = notifications.value.findIndex((n: any) => 
+      (n.notificationId || n._id || n.id) === notificationId
+    )
+    if (index !== -1) {
+      const updated = { ...notifications.value[index] }
+      const currentUserId = getCurrentUserId()
+      if (currentUserId) {
+        const readBy = updated.metadata?.readBy || []
+        if (!readBy.some((id: any) => String(id) === String(currentUserId))) {
+          updated.metadata = {
+            ...(updated.metadata || {}),
+            readBy: [...readBy, currentUserId]
+          }
+        }
+        updated.status = 'read'
+        updated.read = true
+      }
+      notifications.value[index] = updated
+      notificationCount.value = unreadCount.value
+    }
+  } catch (e) {
+    console.error('Failed to mark notification as read:', e)
+    await fetchNotifications()
+  }
+}
+
+// Mark all notifications as read
+const markAllAsRead = async () => {
+  if (unreadCount.value === 0) return
+  
+  try {
+    const { post } = useApi()
+    await post('/notifications/read-all')
+    
+    // Update local state optimistically
+    const currentUserId = getCurrentUserId()
+    notifications.value = notifications.value.map((n: any) => {
+      if (isNotificationRead(n)) return n
+      const updated = { ...n }
+      const readBy = updated.metadata?.readBy || []
+      if (currentUserId && !readBy.some((id: any) => String(id) === String(currentUserId))) {
+        updated.metadata = {
+          ...(updated.metadata || {}),
+          readBy: [...readBy, currentUserId]
+        }
+      }
+      updated.status = 'read'
+      updated.read = true
+      return updated
+    })
+    notificationCount.value = 0
+  } catch (e) {
+    console.error('Failed to mark all notifications as read:', e)
+    await fetchNotifications()
+  }
+}
+
+// Delete a single notification
+const deleteNotification = async (notification: any) => {
+  const notificationId = notification.notificationId || notification._id || notification.id
+  if (!notificationId) return
+  
+  try {
+    const { del } = useApi()
+    await del(`/notifications/${notificationId}/delete`)
+    
+    // Remove from local state
+    notifications.value = notifications.value.filter((n: any) => 
+      (n.notificationId || n._id || n.id) !== notificationId
+    )
+    notificationCount.value = unreadCount.value
+  } catch (e) {
+    console.error('Failed to delete notification:', e)
+    await fetchNotifications()
+  }
+}
+
+// Clear all notifications
+const clearAllNotifications = async () => {
+  if (notifications.value.length === 0) return
+  
+  try {
+    const { del } = useApi()
+    const deletePromises = notifications.value.map((n: any) => {
+      const notificationId = n.notificationId || n._id || n.id
+      if (!notificationId) return Promise.resolve()
+      return del(`/notifications/${notificationId}/delete`).catch(() => {})
+    })
+    
+    await Promise.all(deletePromises)
+    
+    notifications.value = []
+    notificationCount.value = 0
+  } catch (e) {
+    console.error('Failed to clear notifications:', e)
+    await fetchNotifications()
   }
 }
 

@@ -45,29 +45,46 @@
 </template>
 
 <script setup lang="ts">
-const currentUser = ref<string | null>(null)
+// Helper function to check if user is a mentor
+const isMentor = (user: any): boolean => {
+  if (!user) return false
+  // Check if user has a mentor property (most reliable indicator)
+  if (user.mentor && typeof user.mentor === 'object') return true
+  // Check if user has a role property (legacy)
+  if (user.role === 'mentor') return true
+  // Check roles array for MENTOR code (if roles are populated objects)
+  if (Array.isArray(user.roles)) {
+    // Check if roles are objects with code/name (populated)
+    if (user.roles.some((role: any) => 
+      typeof role === 'object' && (role?.code === 'MENTOR' || role?.name === 'Mentor')
+    )) return true
+    // If roles are just IDs (strings), we can't determine from them alone
+    // So we rely on the mentor property check above
+  }
+  return false
+}
 
 const profileLink = computed(() => {
-  if (currentUser.value) {
+  const userCookie = useCookie<any>('user')
+  
+  if (userCookie.value) {
     try {
-      const user = JSON.parse(currentUser.value)
-      if (user.role === 'mentor') {
+      // userCookie.value might already be an object (if useCookie auto-parsed it)
+      // or it might be a string (if it was stored as a string)
+      let user: any
+      if (typeof userCookie.value === 'string') {
+        user = JSON.parse(userCookie.value)
+      } else {
+        user = userCookie.value
+      }
+      
+      if (isMentor(user)) {
         return '/profile/mentor-profile'
       }
     } catch (error) {
-      console.error('Failed to parse user from localStorage:', error)
+      console.error('Failed to parse user from cookie:', error)
     }
   }
   return '/profile/my-profile'
-})
-
-onMounted(async () => {
-  try {
-    currentUser.value = localStorage.getItem('user')
-    const token = localStorage.getItem('auth_token')
-    if (!token) return
-  } catch (error) {
-    console.error('Failed to fetch user role:', error)
-  }
 })
 </script>

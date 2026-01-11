@@ -37,45 +37,60 @@ function getRefreshToken() {
   return tokenCookie.value;
 }
 
+// Prevent concurrent refresh attempts
+let refreshPromise: Promise<string | null> | null = null;
+
 /**
  * Refresh token using cookies
  */
 async function refreshToken(): Promise<string | null> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
-
-  try {
-    const config = useRuntimeConfig();
-    const response = await $fetch<{ accessToken: string; refreshToken: string }>(
-      `${config.public.backendRootUrl}/auth/users/refresh-token`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: {
-          refreshToken: refreshToken,
-        },
-      }
-    );
-
-    if (response.accessToken) {
-      const tokenCookie = useCookie<string | null>("auth_token");
-      const refreshTokenCookie = useCookie<string | null>("refresh_token");
-      tokenCookie.value = response.accessToken;
-      if (response.refreshToken) {
-        refreshTokenCookie.value = response.refreshToken;
-      }
-
-      return response.accessToken;
-    }
-  } catch (error) {
-    console.error("Token refresh failed:", error);
-    useCookie("auth_token").value = null;
-    useCookie("refresh_token").value = null;
+  // If a refresh is already in progress, wait for it
+  if (refreshPromise) {
+    return refreshPromise;
   }
 
-  return null;
+  const refreshTokenValue = getRefreshToken();
+  if (!refreshTokenValue) return null;
+
+  refreshPromise = (async () => {
+    try {
+      const config = useRuntimeConfig();
+      const response = await $fetch<{ accessToken: string; refreshToken: string }>(
+        `${config.public.backendRootUrl}/auth/users/refresh-token`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: {
+            refreshToken: refreshTokenValue,
+          },
+        }
+      );
+
+      if (response.accessToken) {
+        const tokenCookie = useCookie<string | null>("auth_token");
+        const refreshTokenCookie = useCookie<string | null>("refresh_token");
+        tokenCookie.value = response.accessToken;
+        if (response.refreshToken) {
+          refreshTokenCookie.value = response.refreshToken;
+        }
+
+        return response.accessToken;
+      }
+    } catch (error) {
+      console.error("Token refresh failed:", error);
+      useCookie("auth_token").value = null;
+      useCookie("refresh_token").value = null;
+      return null;
+    } finally {
+      // Clear the promise so future refreshes can proceed
+      refreshPromise = null;
+    }
+    return null;
+  })();
+
+  return refreshPromise;
 }
 
 async function makeRequest<TResponse>(

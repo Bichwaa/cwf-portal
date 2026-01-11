@@ -34,7 +34,15 @@ const showLoadScreen = async () => {
     if (me.data) {
       userCookie.value = JSON.stringify(me.data);
       
-      if (me.data.role === 'mentor') {
+      // Check if user is a mentor
+      const isMentor = 
+        (me.data.mentor && typeof me.data.mentor === 'object') || // Most reliable: check mentor property
+        (Array.isArray(me.data.roles) && me.data.roles.some((role: any) => 
+          typeof role === 'object' && (role?.code === 'MENTOR' || role?.name === 'Mentor')
+        )) || // Check populated roles array
+        me.data.role === 'mentor'; // Legacy support
+      
+      if (isMentor) {
         navigateTo('/profile/mentor-profile')
       } else {
         navigateTo('/profile/my-profile')
@@ -46,8 +54,21 @@ const showLoadScreen = async () => {
     // If profile fetch fails, try to use cached user data
     if (userCookie.value) {
       try {
-        const user = JSON.parse(userCookie.value);
-        if (user?.role === 'mentor') {
+        // userCookie.value might already be an object or a string
+        let user: any
+        if (typeof userCookie.value === 'string') {
+          user = JSON.parse(userCookie.value)
+        } else {
+          user = userCookie.value
+        }
+        // Check if user is a mentor
+        const isMentor = 
+          (user?.mentor && typeof user.mentor === 'object') || // Most reliable: check mentor property
+          (Array.isArray(user?.roles) && user.roles.some((role: any) => 
+            typeof role === 'object' && (role?.code === 'MENTOR' || role?.name === 'Mentor')
+          )) || // Check populated roles array
+          user?.role === 'mentor'; // Legacy support
+        if (isMentor) {
           navigateTo('/profile/mentor-profile')
         } else {
           navigateTo('/profile/my-profile')
@@ -56,7 +77,7 @@ const showLoadScreen = async () => {
         navigateTo('/auth/sign-in')
       }
     } else {
-      navigateTo('/auth/sign-in')
+    navigateTo('/auth/sign-in')
     }
   }
 };

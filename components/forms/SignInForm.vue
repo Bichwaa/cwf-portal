@@ -178,8 +178,16 @@ const handleSubmit = async () => {
       refreshTokenCookie.value = response.data.refreshToken
       userCookie.value = JSON.stringify(response.data.user)
       
-      // Redirect to profile
-      if (response.data.user?.role === 'mentor') {
+      // Redirect to profile based on user roles
+      const user = response.data.user
+      const isMentor = 
+        (user?.mentor && typeof user.mentor === 'object') || // Most reliable: check mentor property
+        (Array.isArray(user?.roles) && user.roles.some((role: any) => 
+          typeof role === 'object' && (role?.code === 'MENTOR' || role?.name === 'Mentor')
+        )) || // Check populated roles array
+        user?.role === 'mentor'; // Legacy support
+      
+      if (isMentor) {
         await navigateTo('/profile/mentor-profile')
       } else {
         await navigateTo('/profile/my-profile')

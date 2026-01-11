@@ -50,21 +50,23 @@ const mentors = ref<MentorProfile[]>([{
 ])
 
 onMounted(async () => {
-  const token = localStorage.getItem('auth_token')
-  if (!token) {
+  // Check for token in cookies
+  const authToken = useCookie<string | null>('auth_token')
+  if (!authToken.value) {
     isLoading.value = false
     error.value = 'Not authenticated'
+    await navigateTo('/auth/sign-in')
     return
   }
 
   try {
     const { get } = useApi()
-    const res = await get<any>('/mentorship/mentors/list-mentors', {
-      headers: { authorization: `Bearer ${token}` }
-    })
+    // useApi automatically includes the authorization header from cookies
+    const res = await get<any>('/mentorship/mentors/list-mentors')
     mentors.value = res.data?.data || []
   } catch (e) {
-    error.value = 'Failed to load profile'
+    error.value = 'Failed to load mentors'
+    console.error('Error loading mentors:', e)
   } finally {
     isLoading.value = false
   }

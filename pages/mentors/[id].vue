@@ -24,8 +24,14 @@
         <div class="bg-white rounded-2xl shadow-sm p-6">
           <div class="flex items-start justify-between">
             <div class="flex items-center space-x-4">
-              <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                <svg class="w-10 h-10 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+              <div class="w-16 h-16 bg-blue-100 rounded-lg overflow-hidden flex items-center justify-center">
+                <img 
+                  v-if="profilePictureUrl" 
+                  :src="profilePictureUrl" 
+                  :alt="mentor.user.firstName + ' ' + mentor.user.lastName" 
+                  class="w-full h-full object-cover"
+                />
+                <svg v-else class="w-10 h-10 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
                   <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
                 </svg>
               </div>
@@ -86,20 +92,20 @@
       <!-- Right Column - Sidebar -->
       <div class="space-y-6">
         <!-- Mentorship Request Card -->
-        <div class="bg-white rounded-lg shadow-sm p-6">
+        <div v-if="!isOwnProfile" class="bg-white rounded-lg shadow-sm p-6">
           <h3 class="text-lg text-start font-semibold text-gray-800 mb-4">Connect</h3>
           <hr class="my-4"/>
           <div class="space-y-4">
             <button 
               @click="handleRequestMentorship"
-              :disabled="isRequesting || isRequestSuccessful"
+              :disabled="isRequesting || isRequestSuccessful || hasPendingRequest"
               :class="[
                 'p-2 rounded-lg lg:w-64 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center',
-                isRequestSuccessful ? 'bg-gray-500 hover:bg-gray-500' : 'bg-blue-700 hover:bg-blue-600'
+                (isRequestSuccessful || hasPendingRequest) ? 'bg-gray-500 hover:bg-gray-500' : 'bg-blue-700 hover:bg-blue-600'
               ]"
             >
               <span v-if="isRequesting">Requesting...</span>
-              <span v-else-if="isRequestSuccessful">Request Sent</span>
+              <span v-else-if="isRequestSuccessful || hasPendingRequest">Request Sent</span>
               <span v-else>Request Mentorship</span>
             </button>
           </div>
@@ -199,8 +205,10 @@ const error = ref('')
 const activePanel = ref(1)
 const isRequesting = ref(false)
 const isRequestSuccessful = ref(false)
-const currentUser = ref<{ _id: string; role: string } | null>(null)
+const currentUser = ref<{ _id: string; userId: string; role: string } | null>(null)
 const showSuccessModal = ref(false)
+const isOwnProfile = ref(false)
+const hasPendingRequest = ref(false)
 
 const formatName = (name: string): string => {
   if (!name) return ''
@@ -218,6 +226,27 @@ const formatName = (name: string): string => {
   return shortenedWords.join(' ')
 }
 
+// Extract profile picture URL from mentor data
+const profilePictureUrl = computed(() => {
+  if (!mentor.value) return null
+  // Check if profilePhoto is in the transformed user object
+  const profilePic = (mentor.value as any)?.user?.profilePhoto || 
+                    (mentor.value as any)?.user?.profilePicture ||
+                    (mentor.value as any)?.profilePhoto
+  
+  if (!profilePic) return null
+  
+  // If it's a string (direct URL)
+  if (typeof profilePic === 'string') {
+    return profilePic
+  }
+  // Fallback: if it's an object with url property
+  if (typeof profilePic === 'object' && profilePic.url) {
+    return profilePic.url
+  }
+  return null
+})
+
 const switchPanel = (panel: number) => {
   activePanel.value = panel
 }
@@ -233,7 +262,6 @@ const handleRequestMentorship = async () => {
   }
 
   isRequesting.value = true
-  const token = localStorage.getItem('auth_token')
 
   try {
     const { post } = useApi()
@@ -243,26 +271,28 @@ const handleRequestMentorship = async () => {
     const endDate = new Date('2025-12-31T00:00:00.000Z')
     const duration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
 
+    const mentorId = (mentor.value as any).mentorId || mentor.value._id
+    
     const payload = {
-      mentor: mentor.value._id,
+      mentor: mentorId,
       initiatedBy: 'mentee',
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
       duration: duration,
       status: 'pending',
-      requests: [currentUser.value._id],
+      requests: [currentUser.value.userId], // Use userId instead of _id
       createdBy: {
         _id: currentUser.value._id,
         role: currentUser.value.role || 'mentee'
       }
     }
 
-    const response = await post('/mentorship/mentorships/create', payload, {
-      headers: { authorization: `Bearer ${token}` }
-    })
+    // useApi automatically includes the authorization header from cookies
+    const response = await post('/mentorship/mentorships/create', payload)
 
     if (response.status === 200 || response.status === 201) {
       isRequestSuccessful.value = true
+      hasPendingRequest.value = true // Mark as having pending request
       showSuccessModal.value = true
     } else {
       alert('Failed to send mentorship request. Please try again.')
@@ -277,31 +307,86 @@ const handleRequestMentorship = async () => {
 
 onMounted(async () => {
   const mentorId = route.params.id as string
-  const token = localStorage.getItem('auth_token')
   
-  if (!token) {
+  // Check for token in cookies
+  const authToken = useCookie<string | null>('auth_token')
+  if (!authToken.value) {
     isLoading.value = false
     error.value = 'Not authenticated'
+    await navigateTo('/auth/sign-in')
     return
   }
 
   try {
     const { get } = useApi()
     
-    // Fetch current user
-    const userResponse = await get<any>('/auth/profile/me', {
-      headers: { authorization: `Bearer ${token}` }
-    })
+    // Fetch current user - useApi automatically includes the authorization header from cookies
+    const userResponse = await get<{user: {_id: string; userId: string; role?: string}}>('/auth/users/profile/me')
     currentUser.value = {
-      _id: userResponse.data._id,
-      role: userResponse.data.role || 'mentee'
+      _id: userResponse.data.user._id,
+      userId: userResponse.data.user.userId,
+      role: userResponse.data.user.role || 'mentee'
     }
 
-    // Fetch mentor profile
-    const mentorResponse = await get<MentorProfile>(`/mentorship/mentors/find-mentor/${mentorId}`, {
-      headers: { authorization: `Bearer ${token}` }
-    })
-    mentor.value = mentorResponse.data
+    // Fetch mentor profile - API returns { mentor: {...} }
+    const mentorResponse = await get<{mentor: any}>(`/mentorship/mentors/find-mentor/${mentorId}`)
+    
+    // Transform API response to match component expectations
+    const mentorData = mentorResponse.data.mentor
+    if (mentorData) {
+      // Extract additional info from API response
+      isOwnProfile.value = mentorData.isOwnProfile || false
+      hasPendingRequest.value = mentorData.hasPendingRequest || false
+      
+      // Debug logging
+      console.log('Mentor profile data:', {
+        isOwnProfile: isOwnProfile.value,
+        hasPendingRequest: hasPendingRequest.value,
+        mentorId: mentorData.mentorId,
+        currentUserId: currentUser.value?._id
+      })
+      
+      // Transform the API structure to match what the component expects
+      mentor.value = {
+        _id: mentorData.mentorId || mentorData._id,
+        mentorId: mentorData.mentorId,
+        userId: mentorData.userId,
+        user: {
+          _id: mentorData.userId,
+          firstName: mentorData.personalInfo?.firstName || '',
+          lastName: mentorData.personalInfo?.surname || '',
+          country: mentorData.personalInfo?.countryOfResidence || '',
+          skillsAndInterests: mentorData.skillsAndInterests || [],
+          facebook: mentorData.socialMedia?.facebook || '',
+          twitter: mentorData.socialMedia?.twitter || '',
+          youtube: mentorData.socialMedia?.youtube || '',
+          linkedIn: mentorData.socialMedia?.linkedIn || '',
+          instagram: mentorData.socialMedia?.instagram || '',
+          isOrganization: false, // Default, can be updated if API provides this
+          email: mentorData.personalInfo?.email || '',
+          profilePhoto: mentorData.personalInfo?.profilePhoto || null,
+          profilePicture: mentorData.personalInfo?.profilePhoto || null,
+          role: 'mentor' as const,
+          __v: 0,
+        },
+        languages: mentorData.languages || [],
+        availabilityStatus: mentorData.availabilityStatus || 'unavailable',
+        bio: mentorData.bio || '',
+        specializations: mentorData.skillsAndInterests || [],
+        yearsOfExperience: mentorData.yearsOfExperience || 0,
+        certifications: mentorData.certifications || [],
+        rating: mentorData.rating || { average: 0, count: 0 },
+        maxMentees: mentorData.maxMentees || 0,
+        currentMenteeCount: mentorData.currentMenteeCount || 0,
+        timeZone: '', // Not provided by API
+        preferredCommunication: [], // Not provided by API
+        hourlyRate: 0, // Not provided by API
+        industries: [], // Not provided by API
+        createdAt: mentorData.meta?.createdAt || '',
+        lastModifiedAt: mentorData.meta?.lastModifiedAt || '',
+        __v: 0,
+      } as unknown as MentorProfile
+    }
   } catch (e) {
     error.value = 'Failed to load mentor profile'
     console.error('Error loading mentor:', e)

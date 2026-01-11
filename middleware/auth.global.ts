@@ -9,8 +9,21 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
       const userCookie = useCookie<string | null>('user');
       if (userCookie.value) {
         try {
-          const user = JSON.parse(userCookie.value);
-          if (user?.role === 'mentor') {
+          // userCookie.value might already be an object or a string
+          let user: any
+          if (typeof userCookie.value === 'string') {
+            user = JSON.parse(userCookie.value)
+          } else {
+            user = userCookie.value
+          }
+          // Check if user is a mentor
+          const isMentor = 
+            (user?.mentor && typeof user.mentor === 'object') || // Most reliable: check mentor property
+            (Array.isArray(user?.roles) && user.roles.some((role: any) => 
+              typeof role === 'object' && (role?.code === 'MENTOR' || role?.name === 'Mentor')
+            )) || // Check populated roles array
+            user?.role === 'mentor'; // Legacy support
+          if (isMentor) {
             return navigateTo('/profile/mentor-profile');
           } else {
             return navigateTo('/profile/my-profile');
@@ -23,6 +36,11 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
       return navigateTo('/profile/my-profile');
     }
     // Not authenticated, allow access to auth pages
+    return;
+  }
+
+  // Allow access to profile creation page without authentication
+  if (to.path === '/profile/create') {
     return;
   }
 

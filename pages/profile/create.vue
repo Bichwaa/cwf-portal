@@ -115,6 +115,46 @@
 
       <!-- Main Form Area -->
       <div v-if="formStep === 1" class="flex-1">
+        <!-- Profile Photo Upload -->
+        <div class="px-8 py-8">
+          <div class="max-w-2xl">
+            <label for="profilePhoto" class="block text-2xl text-left font-bold text-gray-800 mb-2">Profile Photo</label>
+            <div class="flex items-center space-x-4">
+              <div v-if="profilePhotoUrl" class="relative">
+                <img :src="profilePhotoUrl" alt="Profile" class="w-24 h-24 rounded-full object-cover border-2 border-gray-300" />
+                <button 
+                  @click="removeProfilePhoto"
+                  class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600 transition-colors"
+                  type="button"
+                >
+                  <Icon name="mdi:close" class="w-4 h-4" />
+                </button>
+              </div>
+              <div v-else class="w-24 h-24 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50">
+                <Icon name="mdi:camera" class="w-8 h-8 text-gray-400" />
+              </div>
+              <div class="flex-1">
+                <label 
+                  for="profilePhotoInput" 
+                  class="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                >
+                  <Icon name="mdi:upload" class="w-5 h-5 mr-2" />
+                  {{ profilePhotoUrl ? 'Change Photo' : 'Upload Photo' }}
+                </label>
+                <input 
+                  id="profilePhotoInput"
+                  type="file" 
+                  accept="image/*" 
+                  @change="handleProfilePhotoUpload"
+                  class="hidden"
+                />
+                <p v-if="uploadingPhoto" class="text-sm text-gray-500 mt-2">Uploading...</p>
+                <p v-else-if="profilePhotoUrl" class="text-sm text-green-600 mt-2">Photo uploaded successfully</p>
+                <p v-else class="text-sm text-gray-500 mt-2">JPG, PNG or GIF (max 50MB)</p>
+              </div>
+            </div>
+          </div>
+        </div>
         <PersonalInfoForm 
           v-model:user="user"
           :account-type="accountType || 'individual'"
@@ -225,8 +265,13 @@ const goals = ref<string[]>([]);
 // Additional fields for mentor registration
 const yearsOfExperience = ref(0);
 const profilePicture = ref('');
+const profilePictureId = ref<string | null>(null); // Store attachment _id
 const availabilityStatus = ref('available');
 const maxMentees = ref(4);
+
+// Profile photo upload state
+const profilePhotoUrl = ref<string | null>(null);
+const uploadingPhoto = ref(false);
 
 const selectUserRole = (role: 'mentee' | 'mentor') => {
   userRole.value = role;
@@ -255,6 +300,68 @@ const selectAccountType = (type: 'individual' | 'organization') => {
     user.value.isOrganization = false;
     user.value.organizationName = '';
   }
+};
+
+const handleProfilePhotoUpload = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  
+  if (!file) return;
+  
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    error.value = 'Please upload an image file';
+    return;
+  }
+  
+  // Validate file size (50MB)
+  if (file.size > 52_428_800) {
+    error.value = 'File size exceeds 50MB limit';
+    return;
+  }
+  
+  uploadingPhoto.value = true;
+  error.value = '';
+  
+  try {
+    const { post } = useApi();
+    const config = useRuntimeConfig();
+    const baseURL = config.public.backendRootUrl;
+    
+    // Create FormData for file upload
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    // Upload file
+    const response = await $fetch<{ url: string; attachmentId: string; _id?: string; name: string; fileType: string; size: number }>(
+      `${baseURL}/media/upload-media`,
+      {
+        method: 'POST',
+        body: formData,
+        // Don't set Content-Type header - browser will set it with boundary
+      }
+    );
+    
+    if (response.url && response._id) {
+      profilePhotoUrl.value = response.url;
+      // Store both URL (for preview) and _id (for backend)
+      profilePicture.value = response.url;
+      profilePictureId.value = response._id;
+    } else {
+      error.value = 'Failed to upload photo';
+    }
+  } catch (e: any) {
+    console.error('Photo upload error:', e);
+    error.value = e?.data?.error || e?.message || 'Failed to upload photo. Please try again.';
+  } finally {
+    uploadingPhoto.value = false;
+  }
+};
+
+const removeProfilePhoto = () => {
+  profilePhotoUrl.value = null;
+  profilePicture.value = '';
+  profilePictureId.value = null;
 };
 
 const handleSubmit = async () => {
@@ -314,6 +421,7 @@ const handleSubmit = async () => {
           dateOfBirth: user.value.dateOfBirth || '',
           nationality: user.value.nationality || '',
           countryOfResidence: user.value.country || '',
+          profilePhoto:  profilePhotoUrl.value || null,
         },
         socialMedia: {
           linkedin: user.value.linkedIn || '',
@@ -322,7 +430,7 @@ const handleSubmit = async () => {
         bio: user.value.bio || '',
         skillsAndInterests: user.value.skillsAndInterests || [],
         yearsOfExperience: yearsOfExperience.value || 0,
-        profilePicture: profilePicture.value || '',
+        profilePicture: profilePhotoUrl.value || null,
         availabilityStatus: availabilityStatus.value || 'available',
         maxMentees: maxMentees.value || 4,
       };
@@ -341,6 +449,7 @@ const handleSubmit = async () => {
           dateOfBirth: user.value.dateOfBirth || '',
           nationality: user.value.nationality || '',
           countryOfResidence: user.value.country || '',
+          profilePhoto: profilePhotoUrl.value || null,
         },
         socialMedia: {
           linkedin: user.value.linkedIn || '',
