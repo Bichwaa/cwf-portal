@@ -39,6 +39,8 @@ function getRefreshToken() {
 
 // Prevent concurrent refresh attempts
 let refreshPromise: Promise<string | null> | null = null;
+let lastRefreshTime = 0;
+const REFRESH_COOLDOWN = 1000; // 1 second cooldown between refresh attempts
 
 /**
  * Refresh token using cookies
@@ -49,11 +51,22 @@ async function refreshToken(): Promise<string | null> {
     return refreshPromise;
   }
 
+  // Prevent too frequent refresh attempts
+  const now = Date.now();
+  if (now - lastRefreshTime < REFRESH_COOLDOWN && refreshPromise === null) {
+    // Wait a bit before allowing another refresh
+    await new Promise(resolve => setTimeout(resolve, REFRESH_COOLDOWN - (now - lastRefreshTime)));
+  }
+
   const refreshTokenValue = getRefreshToken();
-  if (!refreshTokenValue) return null;
+  if (!refreshTokenValue) {
+    console.warn("No refresh token found in cookies");
+    return null;
+  }
 
   refreshPromise = (async () => {
     try {
+      lastRefreshTime = Date.now();
       const config = useRuntimeConfig();
       const response = await $fetch<{ accessToken: string; refreshToken: string }>(
         `${config.public.backendRootUrl}/auth/users/refresh-token`,
@@ -76,10 +89,12 @@ async function refreshToken(): Promise<string | null> {
           refreshTokenCookie.value = response.refreshToken;
         }
 
+        console.log("Token refreshed successfully");
         return response.accessToken;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Token refresh failed:", error);
+      // Clear tokens on refresh failure
       useCookie("auth_token").value = null;
       useCookie("refresh_token").value = null;
       return null;
@@ -101,6 +116,15 @@ async function makeRequest<TResponse>(
   const maxRetries = 1;
 
   try {
+    // Log request details for debugging (only in development)
+    if (process.dev) {
+      console.log("API Request:", {
+        url,
+        method: options.method,
+        hasAuth: !!options.headers?.Authorization,
+      });
+    }
+
     const response = await $fetch.raw<TResponse>(url, {
       ...options,
       credentials: "include", // ⬅ important for cookies
@@ -112,8 +136,10 @@ async function makeRequest<TResponse>(
     };
   } catch (error: any) {
     if (error.status === 401 && retryCount < maxRetries) {
+      console.log("401 error detected, attempting token refresh...");
       const newToken = await refreshToken();
       if (newToken) {
+        console.log("Token refreshed successfully, retrying request...");
         const updatedOptions = {
           ...options,
           headers: {
@@ -123,6 +149,7 @@ async function makeRequest<TResponse>(
         };
         return await makeRequest<TResponse>(url, updatedOptions, retryCount + 1);
       } else {
+        console.error("Token refresh failed, redirecting to login");
         await navigateTo("/auth/sign-in");
         throw error;
       }
@@ -137,11 +164,20 @@ export function useApi() {
 
   // Create headers dynamically to always get the latest token
   function getDefaultHeaders(body?: any): ApiHeaders {
-    return {
+    const token = getAccessToken();
+    const headers: ApiHeaders = {
       Accept: "application/json",
       "Content-Type": "application/json",
-      Authorization: `Bearer ${getAccessToken() ?? ""}`,
     };
+    
+    // Only add Authorization header if token exists
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    } else {
+      console.warn("No access token found in cookies");
+    }
+    
+    return headers;
   }
 
   async function get<TResponse>(path: string, options?: ApiOptions) {
